@@ -155,11 +155,7 @@ The frontend application will start on `http://localhost:5173`.
 
 ---
 
-## 🔮 Future Improvements
-- **📍 Interactive Leaflet Map**: Show all reported issues as markers on a map for better localization.
-- **🔔 Real-time Notifications**: Notify citizens when their complaint status updates, and notify admins when new reports are submitted (via Socket.io).
-- **🤖 AI Categorization & Validation**: Automatically tag categories and reject spam reports using computer vision.
-- **📊 Analytics Reports**: Enable PDF exports for department performance metrics.
+
 
 ---
 
@@ -172,6 +168,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## ✍️ Author
 
 **Alok Tiwari**  
-- GitHub: [@your-github-username](https://github.com/your-github-username)  
-- LinkedIn: [Your Profile](https://linkedin.com)  
-- Email: alok.tiwari@example.com
+- GitHub: [@your-github-username](https://github.com/tiwarialok111)  
+- LinkedIn: [Your Profile](https://www.linkedin.com/in/alok-tiwari-892283300/)  
+- Email: abc.11alok@gmail.com
