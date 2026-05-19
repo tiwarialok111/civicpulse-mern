@@ -159,15 +159,14 @@ The frontend application will start on `http://localhost:5173`.
 
 ---
 
-## 📝 License
+## 📝 License                 
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
-
 ## ✍️ Author
 
 **Alok Tiwari**  
-- GitHub: [@your-github-username](https://github.com/tiwarialok111)  
-- LinkedIn: [Your Profile](https://www.linkedin.com/in/alok-tiwari-892283300/)  
+- GitHub: [@tiwarialok111](https://github.com/tiwarialok111)  
+- LinkedIn: [Alok Tiwari](https://www.linkedin.com/in/alok-tiwari-892283300/)  
 - Email: abc.11alok@gmail.com
