@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://civicpulse-backend-bw3u.onrender.com/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -35,7 +35,7 @@ api.interceptors.response.use(
     // Clearer message when backend is not running
     if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
       message =
-        'Cannot connect to server. Please check your internet connection or try again later.';
+        'Cannot connect to server. Make sure the backend is running on port 5000 (cd server && npm run dev).';
     }
 
     // If token is invalid, clear storage and redirect to login
