@@ -43,6 +43,13 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+.codex/
+.cursor/
+.gemini/
+.zed/
+.mcp.json
+config/mcporter.json
+opencode.json
 
 # Uploads / Temp files
 uploads/
