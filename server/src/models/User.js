@@ -35,6 +35,21 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // New profile fields (optional, backward compatible)
+    bio: {
+      type: String,
+      default: '',
+      maxlength: [200, 'Bio cannot exceed 200 characters'],
+    },
+    phone: {
+      type: String,
+      default: '',
+      maxlength: [20, 'Phone number cannot exceed 20 characters'],
+    },
+    avatarColor: {
+      type: String,
+      default: 'bg-emerald-600',
+    },
     isActive: {
       type: Boolean,
       default: true,

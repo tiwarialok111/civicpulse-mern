@@ -1,444 +1,479 @@
 import { useCallback, useEffect, useState } from 'react';
-import ComplaintDetailModal from '../../components/admin/ComplaintDetailModal';
-import ComplaintsTable from '../../components/admin/ComplaintsTable';
-import Loader from '../../components/Loader';
-import Toast from '../../components/Toast';
 import {
   getAdminComplaints,
   updateComplaintStatus,
   updateComplaintPriority,
   deleteComplaintAdmin,
 } from '../../services/adminService';
+import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/ui/Badge';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Pagination } from '../../components/ui/Pagination';
+import { Modal, ModalBody, ModalFooter } from '../../components/ui/Modal';
+import { TableRowSkeleton } from '../../components/ui/Skeleton';
+import { useToast } from '../../context/ToastContext';
+import { formatDate } from '../../utils/formatDate';
 
-const CATEGORIES = [
-  'Road Damage',
-  'Garbage',
-  'Water Leakage',
-  'Street Light',
-  'Drainage',
-  'Traffic',
-];
+const CATEGORIES = ['Road Damage', 'Garbage', 'Water Leakage', 'Street Light', 'Drainage', 'Traffic'];
+const STATUSES = ['pending', 'in-progress', 'resolved', 'rejected'];
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 
 const ComplaintManagement = () => {
+  const toast = useToast();
   const [complaints, setComplaints] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState({ message: '', type: 'success' });
-  const [selectedComplaint, setSelectedComplaint] = useState(null);
-  const [updatingId, setUpdatingId] = useState(null);
-
-  const [filters, setFilters] = useState({
-    status: '',
-    category: '',
-    priority: '',
-    search: '',
-  });
+  const [filters, setFilters] = useState({ status: '', category: '', priority: '', search: '' });
   const [searchInput, setSearchInput] = useState('');
+  const [updatingId, setUpdatingId] = useState(null);
+  const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [statusModal, setStatusModal] = useState(null); // { complaint, status }
+  const [deleteModal, setDeleteModal] = useState(null); // complaint id
+  const [remark, setRemark] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast({ message: '', type: 'success' }), 4000);
-  };
+  const loadComplaints = useCallback(async (page = 1) => {
+    setLoading(true);
+    try {
+      const res = await getAdminComplaints({
+        page,
+        limit: 10,
+        status: filters.status || undefined,
+        category: filters.category || undefined,
+        priority: filters.priority || undefined,
+        search: filters.search || undefined,
+      });
+      setComplaints(res.data.complaints || []);
+      setPagination(res.data.pagination);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load complaints.');
+      setComplaints([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
 
-  const loadComplaints = useCallback(
-    async (page = 1) => {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await getAdminComplaints({
-          page,
-          limit: 10,
-          status: filters.status || undefined,
-          category: filters.category || undefined,
-          priority: filters.priority || undefined,
-          search: filters.search || undefined,
-        });
-        setComplaints(response.data.complaints);
-        setPagination(response.data.pagination);
-      } catch (err) {
-        setError(err.message || 'Failed to load complaints.');
-        setComplaints([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [filters]
-  );
+  useEffect(() => { loadComplaints(1); }, [loadComplaints]);
 
-  useEffect(() => {
-    loadComplaints(1);
-  }, [loadComplaints]);
-
-  const handleSearchSubmit = (e) => {
+  const handleSearch = (e) => {
     e.preventDefault();
-    setFilters((prev) => ({ ...prev, search: searchInput.trim() }));
+    setFilters((f) => ({ ...f, search: searchInput.trim() }));
   };
 
   const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((f) => ({ ...f, [key]: value }));
   };
 
-  const handleQuickStatusChange = async (id, status) => {
-    setUpdatingId(id);
-    try {
-      const remark = `Status changed quickly via dashboard to ${status}.`;
-      await updateComplaintStatus(id, { status, remark });
-      showToast(`Complaint status updated to ${status}!`);
-      loadComplaints(pagination.page);
-    } catch (err) {
-      showToast(err.message || 'Failed to update status.', 'error');
-    } finally {
-      setUpdatingId(null);
-    }
+  const clearFilters = () => {
+    setFilters({ status: '', category: '', priority: '', search: '' });
+    setSearchInput('');
   };
 
   const handleQuickPriorityChange = async (id, priority) => {
     setUpdatingId(id);
     try {
       await updateComplaintPriority(id, { priority });
-      showToast(`Complaint priority updated to ${priority}!`);
+      toast.success(`Priority updated to ${priority}!`);
       loadComplaints(pagination.page);
     } catch (err) {
-      showToast(err.message || 'Failed to update priority.', 'error');
+      toast.error(err.message || 'Failed to update priority.');
     } finally {
       setUpdatingId(null);
     }
   };
 
-  const handleDeleteComplaint = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this complaint? This action is permanent.')) {
-      return;
-    }
-    setUpdatingId(id);
+  const openStatusModal = (complaint, preStatus = '') => {
+    setStatusModal({ complaint, status: preStatus || complaint.status });
+    setRemark('');
+  };
+
+  const handleStatusUpdate = async () => {
+    if (!statusModal) return;
+    setActionLoading(true);
     try {
-      await deleteComplaintAdmin(id);
-      showToast('Complaint deleted successfully!');
-      loadComplaints(1);
+      await updateComplaintStatus(statusModal.complaint._id, { status: statusModal.status, remark: remark || `Status changed to ${statusModal.status}.` });
+      toast.success(`Status updated to ${statusModal.status}!`);
+      setStatusModal(null);
+      loadComplaints(pagination.page);
     } catch (err) {
-      showToast(err.message || 'Failed to delete complaint.', 'error');
+      toast.error(err.message || 'Failed to update status.');
     } finally {
-      setUpdatingId(null);
+      setActionLoading(false);
     }
   };
 
-  const handleMarkResolved = async (complaint) => {
-    setUpdatingId(complaint._id);
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal) return;
+    setActionLoading(true);
     try {
-      await updateComplaintStatus(complaint._id, {
-        status: 'resolved',
-        remark: 'Resolved via quick action.',
-      });
-      showToast('Complaint marked as resolved!');
-      loadComplaints(pagination.page);
+      await deleteComplaintAdmin(deleteModal);
+      toast.success('Complaint deleted successfully!');
+      setDeleteModal(null);
+      loadComplaints(pagination.page === 1 ? 1 : pagination.page);
     } catch (err) {
-      showToast(err.message || 'Failed to resolve complaint.', 'error');
+      toast.error(err.message || 'Failed to delete complaint.');
     } finally {
-      setUpdatingId(null);
+      setActionLoading(false);
     }
   };
+
+  const exportCSV = () => {
+    if (!complaints.length) return;
+    const headers = ['Title', 'Category', 'Status', 'Priority', 'Reported By', 'Address', 'Date'];
+    const rows = complaints.map((c) => [
+      `"${c.title}"`,
+      c.category,
+      c.status,
+      c.priority || 'medium',
+      c.reportedBy?.name || 'Unknown',
+      `"${c.location?.address || ''}"`,
+      formatDate(c.createdAt),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `civicpulse-complaints-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV exported!');
+  };
+
+  const hasFilters = filters.status || filters.category || filters.priority || filters.search;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12 space-y-6">
-      {toast.message && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
-      )}
-
+    <div className="space-y-5 pb-20 md:pb-6 animate-fade-in">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white sm:text-3xl">Manage Complaints</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            View, track, assign priority, and update statuses of all citizen issues.
+          <h1 className="text-2xl font-extrabold text-white">Complaint Management</h1>
+          <p className="text-sm text-slate-400 mt-0.5">
+            {loading ? 'Loading...' : `${pagination.total} complaint${pagination.total !== 1 ? 's' : ''} total`}
           </p>
         </div>
+        <button
+          onClick={exportCSV}
+          disabled={loading || !complaints.length}
+          className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold text-emerald-400 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 disabled:opacity-40 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+          Export CSV
+        </button>
       </div>
 
-      {/* Filters Card */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-sm sm:p-5">
-        <h2 className="mb-4 text-lg font-semibold text-white">Filters & Search</h2>
+      {/* Filter Bar */}
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+        <form onSubmit={handleSearch} className="flex flex-wrap gap-3">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[160px]">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search title, description..."
+              className="w-full pl-8 pr-3 h-9 text-sm bg-slate-900 border border-slate-700 rounded-xl text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none transition-colors"
+            />
+          </div>
 
-        <form onSubmit={handleSearchSubmit} className="mb-4 flex flex-col gap-3 sm:flex-row">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search by title, description, or address..."
-            className="flex-1 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-900"
-          />
-          <button
-            type="submit"
-            className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            Search
-          </button>
-        </form>
-
-        <div className="flex flex-wrap gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
+          {/* Status */}
+          <div className="relative">
             <select
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-3 py-2 text-sm"
+              className="h-9 pl-3 pr-7 text-sm bg-slate-900 border border-slate-700 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none appearance-none min-w-[120px]"
             >
-              <option value="">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="in-progress">In Progress</option>
-              <option value="resolved">Resolved</option>
-              <option value="rejected">Rejected</option>
+              <option value="">All Status</option>
+              {STATUSES.map((s) => <option key={s} value={s}>{s.replace('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>)}
             </select>
+            <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Category</label>
+          {/* Category */}
+          <div className="relative">
             <select
               value={filters.category}
               onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-3 py-2 text-sm"
+              className="h-9 pl-3 pr-7 text-sm bg-slate-900 border border-slate-700 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none appearance-none min-w-[130px]"
             >
               <option value="">All Categories</option>
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Priority</label>
+          {/* Priority */}
+          <div className="relative">
             <select
               value={filters.priority}
               onChange={(e) => handleFilterChange('priority', e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 text-slate-200 px-3 py-2 text-sm"
+              className="h-9 pl-3 pr-7 text-sm bg-slate-900 border border-slate-700 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none appearance-none min-w-[120px]"
             >
-              <option value="">All Priorities</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
+              <option value="">All Priority</option>
+              {PRIORITIES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
             </select>
+            <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </div>
 
-          <div className="flex items-end">
-            {(filters.status || filters.category || filters.priority || filters.search) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFilters({ status: '', category: '', priority: '', search: '' });
-                  setSearchInput('');
-                }}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
-        </div>
+          <button type="submit" className="h-9 px-4 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-500 transition-colors">
+            Search
+          </button>
+
+          {hasFilters && (
+            <button type="button" onClick={clearFilters} className="h-9 px-3 text-sm text-slate-400 hover:text-white rounded-xl hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              Clear
+            </button>
+          )}
+        </form>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Main Complaints List */}
-      {loading ? (
-        <div className="flex flex-col justify-center items-center py-16 space-y-4">
-          <Loader text="Loading complaints..." />
-        </div>
-      ) : complaints.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900 py-16 text-center">
-          <p className="text-4xl">📭</p>
-          <p className="mt-3 font-semibold text-white">No complaints match your criteria</p>
-          <p className="mt-1 text-sm text-slate-400">Try adjusting your filters or search terms.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Custom table with Priority and Status options */}
-          <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-800/50 text-slate-300 font-semibold">
+      {/* Table */}
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left text-sm min-w-[700px]">
+            <thead className="bg-slate-900/60 border-b border-slate-700">
+              <tr>
+                {['Title & Description', 'Category', 'Reported By', 'Priority', 'Status', 'Date', 'Actions'].map((h) => (
+                  <th key={h} className="px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/60">
+              {loading ? (
+                [1, 2, 3, 4, 5].map((n) => <TableRowSkeleton key={n} cols={7} />)
+              ) : complaints.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Reported By</th>
-                  <th className="px-4 py-3">Priority</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <td colSpan={7}>
+                    <EmptyState icon="📭" title="No complaints found" description={hasFilters ? 'Try adjusting your filters.' : 'No complaints submitted yet.'} compact />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {complaints.map((c) => (
-                  <tr key={c._id} className="hover:bg-slate-800/50 transition">
-                    <td className="max-w-[200px] truncate px-4 py-3 font-medium text-slate-200">
-                      {c.title}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{c.category}</td>
-                    <td className="px-4 py-3 text-slate-400">
-                      <div>{c.reportedBy?.name || '—'}</div>
-                      <div className="text-xs text-slate-400">{c.reportedBy?.email}</div>
-                    </td>
-                    <td className="px-4 py-3">
+              ) : complaints.map((c) => (
+                <tr key={c._id} className="hover:bg-slate-700/30 transition-colors group">
+                  <td className="px-4 py-3.5 max-w-[200px]">
+                    <p className="font-semibold text-slate-200 truncate text-sm">{c.title}</p>
+                    {c.location?.address && (
+                      <p className="text-xs text-slate-500 truncate mt-0.5">📍 {c.location.address}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <CategoryBadge category={c.category} size="sm" />
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <p className="text-sm text-slate-300 font-medium">{c.reportedBy?.name || '—'}</p>
+                    <p className="text-xs text-slate-500 truncate max-w-[130px]">{c.reportedBy?.email}</p>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <div className="relative">
                       <select
                         value={c.priority || 'medium'}
                         onChange={(e) => handleQuickPriorityChange(c._id, e.target.value)}
                         disabled={updatingId === c._id}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
-                          c.priority === 'urgent'
-                            ? 'bg-red-50 border-red-200 text-red-700'
-                            : c.priority === 'high'
-                            ? 'bg-amber-50 border-amber-200 text-amber-700'
-                            : c.priority === 'medium'
-                            ? 'bg-blue-50 border-blue-200 text-blue-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-700'
-                        }`}
+                        className="text-xs font-semibold appearance-none pr-5 pl-2 py-1 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-200 focus:border-emerald-500 focus:outline-none disabled:opacity-50 cursor-pointer"
                       >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                        <option value="urgent">Urgent</option>
+                        {PRIORITIES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
                       </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={c.status}
-                        onChange={(e) => handleQuickStatusChange(c._id, e.target.value)}
-                        disabled={updatingId === c._id}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
-                          c.status === 'resolved'
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                            : c.status === 'rejected'
-                            ? 'bg-red-50 border-red-200 text-red-700'
-                            : c.status === 'in-progress'
-                            ? 'bg-blue-50 border-blue-200 text-blue-700'
-                            : 'bg-amber-50 border-amber-200 text-amber-700'
-                        }`}
+                      <svg className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <StatusBadge status={c.status} size="sm" />
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className="text-xs text-slate-400">{formatDate(c.createdAt)}</span>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setSelectedComplaint(c)}
+                        className="h-7 px-2.5 text-xs font-semibold text-emerald-400 bg-emerald-900/30 border border-emerald-800 rounded-lg hover:bg-emerald-900/50 transition-colors"
                       >
-                        <option value="pending">Pending</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="rejected">Rejected</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-3 items-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedComplaint(c)}
-                          className="text-emerald-600 hover:text-emerald-800 font-semibold"
-                        >
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteComplaint(c._id)}
-                          disabled={updatingId === c._id}
-                          className="text-red-600 hover:text-red-800 font-semibold disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        View
+                      </button>
+                      <button
+                        onClick={() => openStatusModal(c)}
+                        className="h-7 px-2.5 text-xs font-semibold text-blue-400 bg-blue-900/30 border border-blue-800 rounded-lg hover:bg-blue-900/50 transition-colors"
+                      >
+                        Status
+                      </button>
+                      <button
+                        onClick={() => setDeleteModal(c._id)}
+                        className="h-7 px-2.5 text-xs font-semibold text-red-400 bg-red-900/20 border border-red-900 rounded-lg hover:bg-red-900/40 transition-colors"
+                      >
+                        Del
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-          {/* Mobile layouts */}
-          <div className="md:hidden space-y-3">
-            {complaints.map((c) => (
-              <div key={c._id} className="rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-sm space-y-3">
-                <div className="flex items-start justify-between gap-2">
+        {/* Mobile Cards */}
+        <div className="md:hidden p-3 space-y-3">
+          {loading ? (
+            [1, 2, 3].map((n) => <div key={n} className="bg-slate-900 rounded-xl p-4 space-y-3 animate-pulse"><div className="h-4 bg-slate-700 rounded w-3/4" /><div className="h-3 bg-slate-700 rounded w-1/2" /></div>)
+          ) : complaints.length === 0 ? (
+            <EmptyState icon="📭" title="No complaints found" description="Try adjusting filters." compact />
+          ) : complaints.map((c) => (
+            <div key={c._id} className="bg-slate-900 rounded-xl border border-slate-700 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-slate-200 text-sm truncate">{c.title}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{c.reportedBy?.name} · {formatDate(c.createdAt)}</p>
+                </div>
+                <StatusBadge status={c.status} size="sm" />
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <CategoryBadge category={c.category} size="sm" />
+                <PriorityBadge priority={c.priority} size="sm" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setSelectedComplaint(c)} className="flex-1 h-8 text-xs font-semibold text-emerald-400 bg-emerald-900/30 border border-emerald-800 rounded-lg hover:bg-emerald-900/50 transition-colors">
+                  View
+                </button>
+                <button onClick={() => openStatusModal(c)} className="flex-1 h-8 text-xs font-semibold text-blue-400 bg-blue-900/30 border border-blue-800 rounded-lg hover:bg-blue-900/50 transition-colors">
+                  Update Status
+                </button>
+                <button onClick={() => setDeleteModal(c._id)} className="h-8 px-3 text-xs font-semibold text-red-400 bg-red-900/20 border border-red-900 rounded-lg hover:bg-red-900/40 transition-colors">
+                  Del
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pagination */}
+      <div className="[&>*]:text-slate-300 [&_button]:bg-slate-800 [&_button]:border-slate-700 [&_button:hover]:bg-slate-700">
+        <Pagination page={pagination.page} totalPages={pagination.totalPages} onPageChange={(p) => loadComplaints(p)} loading={loading} />
+      </div>
+
+      {/* Detail View Modal */}
+      <Modal open={!!selectedComplaint} onClose={() => setSelectedComplaint(null)} title={selectedComplaint?.title} size="lg">
+        {selectedComplaint && (
+          <>
+            <ModalBody className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge status={selectedComplaint.status} />
+                <PriorityBadge priority={selectedComplaint.priority} />
+                <CategoryBadge category={selectedComplaint.category} />
+              </div>
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Description</p>
+                  <p className="text-slate-700 leading-relaxed">{selectedComplaint.description}</p>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <h3 className="font-semibold text-slate-200">{c.title}</h3>
-                    <p className="text-xs text-slate-400">{c.category}</p>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Reported By</p>
+                    <p className="text-slate-700 font-medium">{selectedComplaint.reportedBy?.name}</p>
+                    <p className="text-xs text-slate-400">{selectedComplaint.reportedBy?.email}</p>
                   </div>
-                  <div className="flex flex-col items-end gap-1.5">
-                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
-                      c.priority === 'urgent'
-                        ? 'bg-red-100 text-red-800'
-                        : c.priority === 'high'
-                        ? 'bg-amber-100 text-amber-800'
-                        : c.priority === 'medium'
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-slate-100 text-slate-800'
-                    }`}>
-                      {c.priority || 'medium'}
-                    </span>
-                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
-                      c.status === 'resolved'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : c.status === 'rejected'
-                        ? 'bg-red-100 text-red-800'
-                        : c.status === 'in-progress'
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {c.status}
-                    </span>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Location</p>
+                    <p className="text-slate-700">{selectedComplaint.location?.address || 'Not specified'}</p>
                   </div>
                 </div>
-                <div className="text-xs text-slate-400">
-                  <div>Reported By: {c.reportedBy?.name || '—'}</div>
-                  <div>Address: {c.location?.address}</div>
+                {selectedComplaint.adminRemark && (
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                    <p className="text-xs font-semibold text-emerald-700 mb-1">Admin Remark</p>
+                    <p className="text-sm text-emerald-800 italic">"{selectedComplaint.adminRemark}"</p>
+                  </div>
+                )}
+                {selectedComplaint.statusHistory?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Status History</p>
+                    <div className="space-y-2 border-l-2 border-slate-200 pl-4">
+                      {selectedComplaint.statusHistory.map((h, i) => (
+                        <div key={i} className="text-sm">
+                          <div className="flex items-center gap-2">
+                            <StatusBadge status={h.status} size="sm" />
+                            <span className="text-xs text-slate-400">{formatDate(h.timestamp)}</span>
+                          </div>
+                          {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {selectedComplaint.images?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Images</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {selectedComplaint.images.map((img, i) => {
+                      const url = typeof img === 'string' ? img : img?.url;
+                      return <img key={i} src={url} alt="" className="h-16 w-full rounded-lg object-cover border border-slate-200" />;
+                    })}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedComplaint(c)}
-                    className="flex-1 rounded-lg border border-slate-700 py-2 text-center text-xs font-semibold text-slate-300 hover:bg-slate-800"
-                  >
-                    View Details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteComplaint(c._id)}
-                    className="rounded-lg border border-red-200 px-3 py-2 text-center text-xs font-semibold text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <button onClick={() => setSelectedComplaint(null)} className="h-9 px-4 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Close</button>
+              <button onClick={() => { openStatusModal(selectedComplaint); setSelectedComplaint(null); }}
+                className="h-9 px-4 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors">
+                Update Status
+              </button>
+            </ModalFooter>
+          </>
+        )}
+      </Modal>
+
+      {/* Status Update Modal */}
+      <Modal open={!!statusModal} onClose={() => setStatusModal(null)} title="Update Complaint Status" size="sm">
+        {statusModal && (
+          <>
+            <ModalBody className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">New Status</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStatusModal((m) => ({ ...m, status: s }))}
+                      className={`h-9 text-sm font-semibold rounded-xl border transition-all ${
+                        statusModal.status === s
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      {s.replace('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-4">
-              <button
-                type="button"
-                disabled={pagination.page <= 1}
-                onClick={() => loadComplaints(pagination.page - 1)}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700">Remark / Note</label>
+                <textarea rows={3} value={remark} onChange={(e) => setRemark(e.target.value)}
+                  className="input-base resize-none" placeholder="Optional note for the citizen about this status change..." />
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <button onClick={() => setStatusModal(null)} className="h-9 px-4 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={handleStatusUpdate} disabled={actionLoading}
+                className="h-9 px-4 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-60 transition-colors">
+                {actionLoading ? 'Updating...' : 'Update Status'}
               </button>
-              <span className="text-sm text-slate-400">
-                Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
-              </span>
-              <button
-                type="button"
-                disabled={pagination.page >= pagination.totalPages}
-                onClick={() => loadComplaints(pagination.page + 1)}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            </ModalFooter>
+          </>
+        )}
+      </Modal>
 
-      {selectedComplaint && (
-        <ComplaintDetailModal
-          complaint={selectedComplaint}
-          onClose={() => setSelectedComplaint(null)}
-          onUpdated={() => loadComplaints(pagination.page)}
-        />
-      )}
+      {/* Delete Confirm Modal */}
+      <Modal open={!!deleteModal} onClose={() => setDeleteModal(null)} title="Delete Complaint"
+        description="This will permanently delete this complaint. This action cannot be undone." size="sm">
+        <ModalFooter>
+          <button onClick={() => setDeleteModal(null)} className="h-9 px-4 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={handleDeleteConfirm} disabled={actionLoading}
+            className="h-9 px-4 text-sm font-semibold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-60 transition-colors">
+            {actionLoading ? 'Deleting...' : '🗑️ Delete'}
+          </button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 };

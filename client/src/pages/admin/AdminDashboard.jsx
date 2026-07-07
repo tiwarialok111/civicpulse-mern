@@ -1,182 +1,234 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import StatCard from '../../components/admin/StatCard';
-import Loader from '../../components/Loader';
 import { getAdminStats } from '../../services/adminService';
+import { StatsCard } from '../../components/ui/StatsCard';
+import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/ui/Badge';
+import { ErrorState } from '../../components/ui/EmptyState';
 import { formatDate } from '../../utils/formatDate';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts';
+
+const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 shadow-xl">
+      <p className="text-xs text-slate-300 mb-1">{label}</p>
+      {payload.map((p, i) => (
+        <p key={i} className="text-sm font-bold text-white">{p.name}: {p.value}</p>
+      ))}
+    </div>
+  );
+};
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadStats = async () => {
-    try {
-      const response = await getAdminStats();
-      setStats(response.data);
-    } catch (err) {
-      setError(err.message || 'Failed to load dashboard statistics.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadStats();
+    const load = async () => {
+      try {
+        const res = await getAdminStats();
+        setStats(res.data);
+      } catch (err) {
+        setError(err.message || 'Failed to load dashboard.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
-  if (loading) {
-    return <Loader fullScreen text="Loading dashboard analytics..." />;
-  }
-
-  // Calculate percentage of resolved complaints
   const total = stats?.total || 0;
   const resolvedPct = total > 0 ? Math.round(((stats?.resolved || 0) / total) * 100) : 0;
 
+  const categoryData = (stats?.categoryStats || []).map((item) => ({
+    name: item._id || 'Unknown',
+    value: item.count,
+    percent: total > 0 ? Math.round((item.count / total) * 100) : 0,
+  }));
+
+  const statusData = [
+    { name: 'Pending', value: stats?.pending || 0, fill: '#f59e0b' },
+    { name: 'In Progress', value: stats?.inProgress || 0, fill: '#3b82f6' },
+    { name: 'Resolved', value: stats?.resolved || 0, fill: '#10b981' },
+    { name: 'Rejected', value: stats?.rejected || 0, fill: '#ef4444' },
+  ].filter((s) => s.value > 0);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <ErrorState title="Dashboard Error" description={error} onRetry={() => window.location.reload()} />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12 space-y-8">
-      {/* Title Header */}
+    <div className="space-y-6 pb-20 md:pb-6 animate-fade-in">
+      {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white sm:text-3xl">Admin Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Real-time telemetry, statistics, and issue distribution across categories.
-          </p>
+          <h1 className="text-2xl font-extrabold text-white">Admin Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-0.5">Platform overview and real-time statistics</p>
         </div>
         <Link
           to="/admin/complaints"
-          className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 shadow transition"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-500 transition-colors shadow-sm"
         >
-          Manage Complaints &rarr;
+          Manage Complaints →
         </Link>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Analytics Counter Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Total Complaints" value={stats?.total || 0} color="slate" />
-        <StatCard label="Pending Approval" value={stats?.pending || 0} color="amber" />
-        <StatCard label="In Progress" value={stats?.inProgress || 0} color="blue" />
-        <StatCard label="Resolved" value={stats?.resolved || 0} color="emerald" />
-        <StatCard label="Rejected" value={stats?.rejected || 0} color="red" />
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[
+          { label: 'Total Complaints', value: stats?.total, icon: '📋', color: 'slate' },
+          { label: 'Pending', value: stats?.pending, icon: '⏳', color: 'amber' },
+          { label: 'In Progress', value: stats?.inProgress, icon: '🔄', color: 'blue' },
+          { label: 'Resolved', value: stats?.resolved, icon: '✅', color: 'emerald' },
+          { label: 'Rejected', value: stats?.rejected, icon: '❌', color: 'red' },
+        ].map((s) => (
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+            <StatsCard label={s.label} value={s.value ?? 0} icon={s.icon} color={s.color} loading={loading}
+              className="bg-transparent border-0 p-0 shadow-none hover:shadow-none hover:transform-none" />
+          </div>
+        ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Category Breakdown list */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm lg:col-span-2">
-          <h3 className="text-lg font-bold text-white">Complaints by Category</h3>
-          <p className="text-xs text-slate-400 mb-6">Issue distribution across departments.</p>
-
-          <div className="space-y-4">
-            {stats?.categoryStats && stats.categoryStats.length > 0 ? (
-              stats.categoryStats.map((item) => {
-                const percent = total > 0 ? Math.round((item.count / total) * 100) : 0;
-                return (
-                  <div key={item._id} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-semibold text-slate-200">{item._id || 'Unclassified'}</span>
-                      <span className="text-slate-400">
-                        {item.count} issues ({percent}%)
-                      </span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-slate-800">
-                      <div
-                        className="h-2 rounded-full bg-emerald-500 transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-sm text-slate-500 italic py-6 text-center">No categories recorded yet.</p>
-            )}
-          </div>
+      {/* Charts Row */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        {/* Category Bar Chart */}
+        <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-5">
+          <h3 className="text-base font-bold text-white mb-1">Complaints by Category</h3>
+          <p className="text-xs text-slate-400 mb-5">Issue distribution across departments</p>
+          {loading ? (
+            <div className="h-48 skeleton rounded-xl" />
+          ) : categoryData.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-slate-500 text-sm">No data yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={categoryData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="value" name="Complaints" radius={[6, 6, 0, 0]}>
+                  {categoryData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        {/* Resolution Rate Card */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-sm">
-          <div>
-            <h3 className="text-lg font-bold text-white">Resolution Rate</h3>
-            <p className="text-xs text-slate-400 mb-6">Current performance ratio.</p>
-          </div>
-
-          <div className="flex flex-col items-center py-4">
-            <div className="relative flex h-36 w-36 items-center justify-center rounded-full border-8 border-slate-800 bg-emerald-900/20 text-emerald-400">
-              {/* Fake progress ring or simply text representation */}
-              <div className="text-center">
-                <span className="text-4xl font-extrabold">{resolvedPct}%</span>
-                <p className="text-[10px] uppercase font-bold text-emerald-500 mt-1">Closed</p>
+        {/* Status Donut + Resolution Rate */}
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 flex flex-col">
+          <h3 className="text-base font-bold text-white mb-1">Status Distribution</h3>
+          <p className="text-xs text-slate-400 mb-4">Current platform performance</p>
+          {loading ? (
+            <div className="h-40 skeleton rounded-xl flex-1" />
+          ) : statusData.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">No data yet</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={150}>
+                <PieChart>
+                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} dataKey="value" paddingAngle={2}>
+                    {statusData.map((s, i) => <Cell key={i} fill={s.fill} />)}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-3 space-y-1.5">
+                {statusData.map((s) => (
+                  <div key={s.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.fill }} />
+                      <span className="text-xs text-slate-400">{s.name}</span>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-200">{s.value}</span>
+                  </div>
+                ))}
               </div>
-            </div>
-            <p className="mt-6 text-xs text-center text-slate-400 leading-relaxed max-w-[200px]">
-              <span className="font-bold text-slate-200">{stats?.resolved || 0}</span> out of{' '}
-              <span className="font-bold text-slate-200">{total}</span> total filed complaints have been successfully resolved.
-            </p>
-          </div>
+              <div className="mt-4 pt-3 border-t border-slate-700 text-center">
+                <p className="text-3xl font-extrabold text-emerald-400">{resolvedPct}%</p>
+                <p className="text-xs text-slate-400 mt-0.5">Resolution Rate</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Recent Complaints Panel */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-white">Recently Filed Complaints</h3>
-            <p className="text-xs text-slate-400">Latest citizen activity reports.</p>
-          </div>
-          <Link to="/admin/complaints" className="text-xs font-bold text-emerald-600 hover:underline">
-            View All &rarr;
-          </Link>
-        </div>
-
-        {stats?.recentComplaints && stats.recentComplaints.length > 0 ? (
-          <div className="divide-y divide-slate-800">
-            {stats.recentComplaints.map((item) => (
-              <div key={item._id} className="flex flex-wrap items-center justify-between gap-2 py-3.5 hover:bg-slate-800/50 px-2 rounded-lg transition">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-200 text-sm">{item.title}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                      item.priority === 'urgent'
-                        ? 'bg-red-50 text-red-700'
-                        : item.priority === 'high'
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-slate-50 text-slate-700'
-                    }`}>
-                      {item.priority || 'medium'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span>{item.category}</span>
-                    <span>&bull;</span>
-                    <span>By {item.reportedBy?.name || 'Anonymous'}</span>
-                  </div>
+      {/* Category Progress Bars */}
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+        <h3 className="text-base font-bold text-white mb-1">Category Breakdown</h3>
+        <p className="text-xs text-slate-400 mb-5">Percentage share of each issue type</p>
+        {loading ? (
+          <div className="space-y-3">{[1, 2, 3].map((n) => <div key={n} className="h-6 skeleton rounded" />)}</div>
+        ) : categoryData.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">No categories recorded yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {categoryData.map((item, i) => (
+              <div key={item.name}>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-sm font-semibold text-slate-200">{item.name}</span>
+                  <span className="text-sm text-slate-400">{item.value} issues ({item.percent}%)</span>
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400">{formatDate(item.createdAt)}</span>
-                  <span className={`rounded px-2.5 py-1 text-xs font-bold uppercase ${
-                    item.status === 'resolved'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : item.status === 'rejected'
-                      ? 'bg-red-50 text-red-700'
-                      : item.status === 'in-progress'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'bg-amber-50 text-amber-700'
-                  }`}>
-                    {item.status}
-                  </span>
+                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${item.percent}%`, backgroundColor: COLORS[i % COLORS.length] }}
+                  />
                 </div>
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Recent Complaints */}
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-base font-bold text-white">Recent Complaints</h3>
+            <p className="text-xs text-slate-400">Latest citizen activity</p>
+          </div>
+          <Link to="/admin/complaints" className="text-sm font-semibold text-emerald-500 hover:text-emerald-400 transition-colors">
+            View All →
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3">{[1, 2, 3, 4, 5].map((n) => <div key={n} className="h-12 skeleton rounded-xl" />)}</div>
+        ) : !stats?.recentComplaints?.length ? (
+          <p className="text-sm text-slate-500 text-center py-6">No complaints submitted yet.</p>
         ) : (
-          <p className="text-sm text-slate-500 italic py-6 text-center">No complaints submitted recently.</p>
+          <div className="divide-y divide-slate-700/60">
+            {stats.recentComplaints.map((item) => (
+              <div key={item._id} className="flex flex-wrap items-center justify-between gap-3 py-3.5 hover:bg-slate-700/30 px-2 rounded-xl transition-colors">
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-slate-200 text-sm truncate max-w-[200px]">{item.title}</span>
+                    <PriorityBadge priority={item.priority} size="sm" />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <CategoryBadge category={item.category} size="sm" />
+                    <span>·</span>
+                    <span>By {item.reportedBy?.name || 'Unknown'}</span>
+                    <span>·</span>
+                    <span>{formatDate(item.createdAt)}</span>
+                  </div>
+                </div>
+                <StatusBadge status={item.status} size="sm" />
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
