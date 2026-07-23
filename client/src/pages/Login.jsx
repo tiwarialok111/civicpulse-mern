@@ -49,7 +49,7 @@ const Login = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await login(form);
+      const res = await login({ email: form.email.trim(), password: form.password });
       toast.success(`Welcome back, ${res.data.user.name.split(' ')[0]}!`);
       navigate(res.data.user.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {

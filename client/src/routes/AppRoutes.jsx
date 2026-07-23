@@ -40,8 +40,6 @@ const AppRoutes = () => {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/admin/login" element={<AdminLogin />} />
-            <Route path="/admin/register" element={<AdminRegister />} />
             <Route path="*" element={<NotFound />} />
 
             {/* Protected citizen routes */}
@@ -55,6 +53,10 @@ const AppRoutes = () => {
               <Route path="/analytics" element={<Analytics />} />
             </Route>
           </Route>
+
+          {/* Admin auth pages — standalone, no Navbar */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin/register" element={<AdminRegister />} />
 
           {/* Admin-only routes */}
           <Route element={<AdminRoute />}>

@@ -8,7 +8,8 @@ const generateToken = require('../utils/generateToken');
  * @access  Public
  */
 const register = catchAsync(async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, password, role } = req.body;
+  const email = req.body.email?.toLowerCase().trim();
 
   if (!name || !email || !password) {
     throw new ApiError(400, 'Please provide name, email, and password.');
@@ -43,13 +44,15 @@ const register = catchAsync(async (req, res) => {
  * @access  Public
  */
 const login = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
+  const password = req.body.password;
+  const email = req.body.email?.toLowerCase().trim();
 
   if (!email || !password) {
     throw new ApiError(400, 'Please provide email and password.');
   }
 
   // Need to explicitly select password since it's hidden by default
+  // Use normalized email to match the lowercased value stored in DB
   const user = await User.findOne({ email }).select('+password');
 
   if (!user || !(await user.comparePassword(password))) {
